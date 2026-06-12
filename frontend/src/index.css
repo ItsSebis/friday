@@ -1,0 +1,60 @@
+/*
+ * Globale Basis-Styles für den Kiosk.
+ * Tokens kommen als CSS-Variablen vom ThemeProvider (siehe theme.ts).
+ * Kiosk-Regeln: kein Scroll, keine Textauswahl, kein Tap-Highlight, immer dunkel.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--color-background, #04070d);
+  color: var(--color-text, #e8f4ff);
+  font-family: var(--font-family, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+
+  /* Kiosk: Interaktion einschränken */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: none; /* kein Mauszeiger im Vollbild */
+}
+
+#root {
+  position: relative;
+}
+
+/* Hilfsklasse: zentrierter Vollbild-Container je Screen */
+.screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Dezenter Hintergrund-Glow im Zentrum (FRIDAY-Ambiente) */
+.screen::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(54, 214, 255, 0.06),
+    transparent 60%
+  );
+  pointer-events: none;
+}

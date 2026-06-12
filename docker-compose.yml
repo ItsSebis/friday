@@ -1,0 +1,32 @@
+# Friday – Container-Orchestrierung
+# Zwei Services: Backend (FastAPI + Hermes) und Frontend (Nginx + SPA).
+# Auf dem Raspberry Pi 5 (arm64) lauffähig; Images sind multi-arch.
+
+services:
+  backend:
+    build:
+      context: ./backend
+    container_name: friday-backend
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: friday-frontend
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+    volumes:
+      # Single Source der Nginx-Config (siehe frontend/Dockerfile).
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
