@@ -22,7 +22,8 @@ src/
 └── presentation/      # UI – React-Komponenten (kennen nur Store + Domain-Typen)
     ├── theme/             Theme-Tokens + ThemeProvider (CSS-Variablen)
     ├── screens/           Ein Screen pro FridayState (Idle/Listening/Thinking/Speaking)
-    └── components/        Wiederverwendbare Bausteine (Panel, Visualizer, Widgets …)
+    ├── components/        Wiederverwendbare Bausteine (Panel, Visualizer, Widgets …)
+    └── dev/               Dev-only: Konsole + Befehls-Registry (nur im DEV-Build, siehe README)
 ```
 
 ## Abhängigkeitsregel

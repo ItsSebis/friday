@@ -7,16 +7,15 @@
  */
 import { useEffect, useRef } from 'react';
 import { WebSocketClient } from '@infrastructure/websocket/WebSocketClient';
+import { WS_URL } from '@infrastructure/http/api';
 import { useFridayStore } from '@application/store/useFridayStore';
 import { clientMessage, MessageType, type Envelope } from '@domain/messages';
-
-/** Liest die WS-URL aus der Vite-Umgebung (Fallback: localhost). */
-const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8000/ws';
 
 export function useWebSocket() {
   const clientRef = useRef<WebSocketClient | null>(null);
   const applyServerMessage = useFridayStore((s) => s.applyServerMessage);
   const setConnected = useFridayStore((s) => s.setConnected);
+  const registerSender = useFridayStore((s) => s.registerSender);
 
   useEffect(() => {
     const client = new WebSocketClient({
@@ -31,8 +30,14 @@ export function useWebSocket() {
     });
     client.connect();
     clientRef.current = client;
-    return () => client.disconnect();
-  }, [applyServerMessage, setConnected]);
+    // Sendefunktion im Store registrieren, damit beliebige Komponenten
+    // (Interrupt-Button, Dev-Konsole) Client-Nachrichten senden können.
+    registerSender((m) => client.send(m));
+    return () => {
+      registerSender(null);
+      client.disconnect();
+    };
+  }, [applyServerMessage, setConnected, registerSender]);
 
   /** Sendet ein UI-Event an das Backend (z. B. Interrupt). */
   const send = <T extends Record<string, unknown>>(message: Envelope<T>) =>

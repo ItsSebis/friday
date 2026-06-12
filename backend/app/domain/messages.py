@@ -32,11 +32,15 @@ class MessageType(str, Enum):
     TRANSCRIPT = "transcript"            # erkannter Nutzertext (partial/final)
     RESPONSE = "response"                # Agenten-Antwort (delta/complete)
     TOOL_EVENT = "tool.event"            # Tool-Aufruf-Status für Tool-Panels
+    AUDIO_SPEAK = "audio.speak"          # Frontend soll TTS-Audio abspielen
     DASHBOARD_UPDATE = "dashboard.update"  # Uhr / Wetter / Spotify
     ERROR = "error"                      # Fehler zur Anzeige
 
     # ── Client → Server ───────────────────────────────────────────────
     CLIENT_HELLO = "client.hello"        # Handshake nach Verbindungsaufbau
+    LISTEN_START = "listen.start"        # Nutzer startet Aufnahme (Push-to-talk/Wakeword)
+    LISTEN_CANCEL = "listen.cancel"      # Aufnahme abgebrochen ohne Senden
+    SPEAK_DONE = "speak.done"            # TTS-Wiedergabe im Frontend beendet
     UI_INTERRUPT = "ui.interrupt"        # Nutzer bricht Ausgabe ab (Touch/Klick)
 
 
@@ -70,6 +74,16 @@ class ToolEventPayload(BaseModel):
     tool: str
     status: Literal["started", "succeeded", "failed"]
     detail: dict[str, Any] = Field(default_factory=dict)
+
+
+class AudioSpeakPayload(BaseModel):
+    """Weist das Frontend an, die TTS-Antwort abzuspielen.
+
+    ``audio_url`` ist ``None``, wenn TTS deaktiviert/nicht verfügbar ist — dann
+    zeigt das Frontend nur ``text`` an und meldet ``speak.done`` selbst.
+    """
+    audio_url: str | None = None
+    text: str = ""
 
 
 class DashboardUpdatePayload(BaseModel):

@@ -54,6 +54,12 @@ async def _dispatch(envelope: Envelope, session: SessionService) -> None:
     match envelope.type:
         case MessageType.CLIENT_HELLO:
             logger.info("client.hello: %s", envelope.payload)
+        case MessageType.LISTEN_START:
+            await session.on_listen_start()
+        case MessageType.LISTEN_CANCEL:
+            await session.on_listen_cancel()
+        case MessageType.SPEAK_DONE:
+            await session.on_speak_done()
         case MessageType.UI_INTERRUPT:
             await session.on_interrupt()
         case _:

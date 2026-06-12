@@ -9,6 +9,7 @@ import { motion } from 'framer-motion';
 import { Clock } from '@presentation/components/Clock';
 import { WeatherWidget } from '@presentation/components/WeatherWidget';
 import { SpotifyWidget } from '@presentation/components/SpotifyWidget';
+import { BackgroundSlideshow } from '@presentation/components/BackgroundSlideshow';
 import { theme } from '@presentation/theme/theme';
 
 export function IdleScreen() {
@@ -21,16 +22,8 @@ export function IdleScreen() {
       transition={{ duration: theme.motion.slow, ease: theme.motion.ease }}
       style={{ flexDirection: 'column' }}
     >
-      {/* Slot für die rotierende Bildergalerie (Businesslogik folgt). */}
-      <div
-        aria-hidden
-        style={{
-          position: 'absolute',
-          inset: 0,
-          background:
-            'linear-gradient(160deg, #060b14 0%, #04070d 55%, #0a1018 100%)',
-        }}
-      />
+      {/* Rotierende Hintergrundbilder (aus dem Bilderordner). */}
+      <BackgroundSlideshow />
 
       {/* Zentrale Uhr */}
       <div style={{ position: 'relative', zIndex: 1 }}>

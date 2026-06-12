@@ -6,27 +6,36 @@ keine Frameworks.
 
 ```
 app/
-├── domain/          # Enterprise-Regeln: Zustände & Nachrichten-Verträge (framework-frei)
+├── domain/          # Enterprise-Regeln (framework-frei)
 │   ├── states.py        FridayState – die Zustandsmaschine
-│   └── messages.py      WebSocket-Protokoll (Envelope + typisierte Nachrichten)
+│   ├── messages.py      WebSocket-Protokoll (Envelope + typisierte Nachrichten)
+│   └── agent_events.py  TextDelta / ToolProgress – Streaming-Events des Agenten
 │
 ├── application/     # Anwendungsfälle & Ports (Interfaces, framework-frei)
 │   ├── ports/
-│   │   └── agent_port.py     AgentPort – Schnittstelle, die Hermes erfüllen muss
+│   │   ├── agent_port.py        AgentPort – Hermes-Schnittstelle (streamt AgentEvents)
+│   │   ├── broadcaster_port.py  BroadcasterPort – Ausgang an Clients
+│   │   ├── transcriber_port.py  TranscriberPort – STT
+│   │   └── speaker_port.py      SpeakerPort – TTS
 │   └── services/
-│       └── session_service.py  Orchestriert eine Gesprächs-Session (Zustandsübergänge)
+│       ├── session_service.py   Orchestriert die Sprach-Session (Zustände + Stream)
+│       └── audio_store.py       Kurzlebiger Cache für TTS-WAVs
 │
 ├── infrastructure/  # Adapter zu externen Systemen (implementieren die Ports)
-│   ├── hermes/          HermesAgent – AgentPort-Implementierung (Stub)
-│   ├── openrouter/      OpenRouter-LLM-Client (Stub)
+│   ├── hermes/          HermesAgent – ruft den OpenAI-kompatiblen Hermes-API-Server (SSE)
+│   ├── audio/           WhisperTranscriber (whisper.cpp) · PiperSpeaker (piper)
+│   ├── widgets/         WeatherService (Open-Meteo) · SpotifyService (OAuth)
 │   └── telegram/        Telegram-Gateway (Stub)
 │
-├── api/             # Interface-Adapter: FastAPI, WebSocket-Gateway
-│   ├── connection_manager.py  Verwaltet aktive WebSocket-Verbindungen
-│   ├── websocket.py           /ws Endpoint – übersetzt WS ↔ Domain-Nachrichten
-│   └── routes.py              HTTP-Health-/Meta-Endpoints
+├── api/             # Interface-Adapter: FastAPI
+│   ├── connection_manager.py  Verwaltet WebSocket-Verbindungen (BroadcasterPort)
+│   ├── websocket.py           /ws – übersetzt WS ↔ Domain
+│   ├── voice.py               /voice/stt (Upload) · /voice/tts/{id} (Auslieferung)
+│   ├── widgets.py             /widgets/weather · /widgets/spotify (request-basiert)
+│   ├── debug.py               /debug/* (nur development)
+│   └── routes.py              /health · /meta
 │
-├── core/            # Querschnitt: Konfiguration, Logging
+├── core/            # Querschnitt: Konfiguration
 │   └── config.py        Settings (pydantic-settings, aus .env)
 │
 └── main.py          # Composition Root: verdrahtet Adapter mit Ports & startet FastAPI

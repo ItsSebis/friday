@@ -14,10 +14,14 @@ export const MessageType = {
   TRANSCRIPT: 'transcript',
   RESPONSE: 'response',
   TOOL_EVENT: 'tool.event',
+  AUDIO_SPEAK: 'audio.speak',
   DASHBOARD_UPDATE: 'dashboard.update',
   ERROR: 'error',
   // Client → Server
   CLIENT_HELLO: 'client.hello',
+  LISTEN_START: 'listen.start',
+  LISTEN_CANCEL: 'listen.cancel',
+  SPEAK_DONE: 'speak.done',
   UI_INTERRUPT: 'ui.interrupt',
 } as const;
 
@@ -48,6 +52,12 @@ export interface ToolEventPayload {
   tool: string;
   status: 'started' | 'succeeded' | 'failed';
   detail: Record<string, unknown>;
+}
+
+export interface AudioSpeakPayload {
+  /** URL des TTS-WAV am Backend, oder null (dann nur Text anzeigen). */
+  audio_url: string | null;
+  text: string;
 }
 
 export interface WeatherInfo {
@@ -93,6 +103,7 @@ export type ServerMessage =
   | Envelope<TranscriptPayload> & { type: typeof MessageType.TRANSCRIPT }
   | Envelope<ResponsePayload> & { type: typeof MessageType.RESPONSE }
   | Envelope<ToolEventPayload> & { type: typeof MessageType.TOOL_EVENT }
+  | Envelope<AudioSpeakPayload> & { type: typeof MessageType.AUDIO_SPEAK }
   | Envelope<DashboardUpdatePayload> & { type: typeof MessageType.DASHBOARD_UPDATE }
   | Envelope<ErrorPayload> & { type: typeof MessageType.ERROR };
 

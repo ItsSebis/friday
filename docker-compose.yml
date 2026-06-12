@@ -1,6 +1,13 @@
 # Friday – Container-Orchestrierung
-# Zwei Services: Backend (FastAPI + Hermes) und Frontend (Nginx + SPA).
-# Auf dem Raspberry Pi 5 (arm64) lauffähig; Images sind multi-arch.
+# Services: Backend (FastAPI + Friday-Orchestrierung) und Frontend (Nginx + SPA).
+#
+# Hermes (der Agent) läuft separat als eigener Prozess/Service und stellt seinen
+# OpenAI-kompatiblen API-Server bereit (Standard-Port 8642). Das Backend spricht
+# ihn über HERMES_BASE_URL an. Siehe docker/README.md.
+#
+# STT/TTS (whisper.cpp, piper) laufen im Backend-Container und benötigen
+# Modelle unter /models (per Volume gemountet) sowie die Binaries (siehe
+# backend/Dockerfile bzw. README).
 
 services:
   backend:
@@ -9,8 +16,25 @@ services:
     container_name: friday-backend
     env_file:
       - .env
+    environment:
+      # Hermes läuft typischerweise auf dem Host → über das Docker-Gateway erreichbar.
+      HERMES_BASE_URL: ${HERMES_BASE_URL:-http://host.docker.internal:8642}
+      # Im Container liegen die Modelle/Bilder unter den gemounteten Pfaden
+      # (überschreibt die lokalen ../docker/...-Pfade aus der .env).
+      STT_MODEL: /models/ggml-base.bin
+      TTS_VOICE: /models/de_DE-thorsten-medium.onnx
+      IMAGES_DIR: /images
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
+    volumes:
+      # STT/TTS-Modelle (ggml-Modell für whisper.cpp, .onnx-Stimme für piper).
+      - ./docker/models:/models:ro
+      # Hintergrundbilder: hier einfach Bilder hineinlegen (Idle-Slideshow).
+      - ./assets/images:/images:ro
+    # Für STT/TTS im Backend wird kein Mikrofon/Lautsprecher benötigt — das Audio
+    # läuft im Browser. Das Backend transkribiert/synthetisiert nur Dateien.
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]

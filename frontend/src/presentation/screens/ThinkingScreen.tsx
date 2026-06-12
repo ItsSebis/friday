@@ -18,7 +18,7 @@ export function ThinkingScreen() {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: theme.motion.base, ease: theme.motion.ease }}
-      style={{ flexDirection: 'column', gap: 40 }}
+      style={{ flexDirection: 'column', gap: 32, justifyContent: 'flex-end', paddingBottom: '8vh' }}
     >
       {/* Konzentrische, gegenläufig rotierende Ringe als „Denk“-Animation. */}
       <div style={{ position: 'relative', width: 220, height: 220 }}>

@@ -7,9 +7,13 @@ ambienten Bilderrahmenmodus mit einem sprachgesteuerten KI-Assistenten. Die
 Sprachlogik, das Gedächtnis und die Tool-Integration übernimmt der **Hermes
 Agent**; das Frontend ist eine reine Präsentationsschicht.
 
-> **Status:** Architektur- und UI-Grundgerüst. Es ist bewusst **keine
-> Businesslogik** implementiert — die Komponenten definieren Verträge, Layer und
-> die visuelle Grundstruktur. Stubs sind mit `TODO(Businesslogik)` markiert.
+> **Status: Beta.** Die vollständige Sprach-Pipeline ist real verdrahtet —
+> Mikrofonaufnahme im Browser, lokale Spracherkennung (whisper.cpp), der
+> [Hermes Agent](https://hermes-agent.nousresearch.com/) als OpenAI-kompatibler
+> Backend-Server und lokale Sprachausgabe (piper). Die Idle-Widgets holen ihre
+> Daten request-basiert über REST. Externe Abhängigkeiten (laufender Hermes,
+> STT-/TTS-Modelle, optional Spotify-OAuth) müssen auf dem Pi bereitstehen —
+> siehe [Voraussetzungen](#voraussetzungen) und [Voice-Pipeline](#voice-pipeline-echter-betrieb).
 
 ---
 
@@ -25,6 +29,8 @@ Agent**; das Frontend ist eine reine Präsentationsschicht.
   - [Backend starten](#backend-starten)
   - [Frontend starten](#frontend-starten)
   - [Verfügbare Skripte](#verfügbare-skripte)
+- [Voice-Pipeline (echter Betrieb)](#voice-pipeline-echter-betrieb)
+- [Dev-Werkzeuge](#dev-werkzeuge)
 - [WebSocket-Protokoll](#websocket-protokoll)
 - [Deployment (Docker)](#deployment-docker)
 - [Raspberry-Pi-Kiosk-Setup](#raspberry-pi-kiosk-setup)
@@ -69,12 +75,35 @@ innen — die UI und die Frameworks (FastAPI, React) sind austauschbare Details.
 
 ### Zuständigkeiten
 
-**Hermes Agent (Backend)** — Agentenlogik / Orchestrierung, Memory, Tool Calling,
-Telegram-Anbindung, OpenRouter-Integration (LLM).
+**Hermes Agent** — eigenständiger Prozess (OpenAI-kompatibler API-Server, Port
+8642): Agentenlogik, Memory, Tool Calling, OpenRouter-Anbindung. Das
+Friday-Backend ruft ihn über den `AgentPort`.
 
-**Frontend (Kiosk)** — Bilderrahmenmodus (Idle), Audio-Visualizer, Sprachstatus
-(Listening / Thinking / Speaking), Tool-Panels, Dashboard (Uhrzeit, Wetter,
-Spotify).
+**Friday-Backend (FastAPI)** — Orchestriert die Sprach-Session (Zustandsmaschine),
+betreibt lokale STT (whisper.cpp) und TTS (piper), liefert die Widget-Daten per
+REST und broadcastet den Zustand über WebSocket.
+
+**Frontend (Kiosk)** — Bilderrahmenmodus (Idle), Mikrofonaufnahme (getUserMedia),
+echter Audio-Visualizer, Sprachstatus, Tool-Panels, Dashboard (Uhr, Wetter, Spotify).
+
+### Datenfluss einer Sprachinteraktion
+
+```
+Browser (Kiosk)                    Friday-Backend                    Hermes (:8642)
+───────────────                    ──────────────                    ─────────────
+Tippen → getUserMedia
+  ├─ Mikrofonpegel ─────────────►  (Visualizer, live)
+  └─ 16-kHz-WAV ──POST /voice/stt► whisper.cpp → Transkript
+                                   SessionService:
+                                     thinking ──/v1/chat/completions──► Hermes → OpenRouter
+                                     ◄── Antwort-Deltas + tool.progress (SSE)
+                                     speaking → piper → WAV (AudioStore)
+TTS abspielen ◄── GET /voice/tts/{id} ──┘   (WS: state, response, tool.event, audio.speak)
+  └─ Wiedergabepegel ───────────►  (Visualizer)
+speak.done ───────────────────►   idle
+
+Idle-Widgets ──poll──► GET /widgets/weather (Open-Meteo) · /widgets/spotify (OAuth)
+```
 
 Detaillierte Layer-Dokumentation:
 - [`backend/ARCHITECTURE.md`](backend/ARCHITECTURE.md)
@@ -133,6 +162,19 @@ friday/
 - Docker + Docker Compose
 - Chromium (für den Kiosk-Browser)
 
+### Externe Dienste für den echten Betrieb
+
+| Abhängigkeit | Wofür | Hinweis |
+|---|---|---|
+| **Hermes Agent** | Agentenlogik + LLM | Läuft als eigener Prozess; API-Server auf `:8642`. Mit OpenRouter konfigurieren. |
+| **whisper.cpp** + ggml-Modell | Spracherkennung (STT) | Binary im PATH (`STT_BINARY`), Modell unter `STT_MODEL`. |
+| **piper** + Stimme (.onnx) | Sprachausgabe (TTS) | Binary (`TTS_BINARY`) + Stimme (`TTS_VOICE`); im Docker-Image per pip. |
+| Spotify-OAuth-App | Spotify-Widget (optional) | Nur falls das Now-Playing-Widget genutzt wird. |
+
+> Fehlt eine dieser Abhängigkeiten, bleibt Friday lauffähig (Graceful
+> Degradation): ohne Hermes kommt eine Hinweis-Antwort, ohne STT ein leeres
+> Transkript, ohne TTS wird die Antwort nur angezeigt.
+
 ---
 
 ## Entwicklung
@@ -152,10 +194,12 @@ Alle Geheimnisse und Laufzeit-Einstellungen liegen in `.env` (aus
 |---------------------------|------------------------------------------------|
 | `FRIDAY_HOST` / `FRIDAY_PORT` | Bind-Adresse des Backends                  |
 | `FRIDAY_ALLOWED_ORIGINS`  | Erlaubte CORS-/WS-Origins (kommagetrennt)      |
-| `OPENROUTER_API_KEY`      | API-Key für OpenRouter (LLM)                   |
-| `OPENROUTER_MODEL`        | Default-Modell, z. B. `anthropic/claude-opus-4-8` |
-| `TELEGRAM_BOT_TOKEN`      | Token des Telegram-Bots (Hermes-Tool)          |
-| `VITE_WS_URL`             | WebSocket-URL für das Frontend                 |
+| `HERMES_BASE_URL` / `HERMES_API_KEY` | Adresse + Bearer-Key des Hermes-API-Servers |
+| `STT_BINARY` / `STT_MODEL` / `STT_LANGUAGE` | whisper.cpp-CLI, Modellpfad, Sprache |
+| `TTS_ENABLED` / `TTS_BINARY` / `TTS_VOICE` | piper an/aus, CLI, Stimmen-Datei |
+| `WEATHER_LAT` / `WEATHER_LON` | Standort fürs Wetter-Widget (Open-Meteo)   |
+| `SPOTIFY_CLIENT_ID/_SECRET/_REFRESH_TOKEN` | Spotify-Widget (optional)         |
+| `VITE_WS_URL`             | WS-URL fürs Frontend (Dev; leer = gleicher Origin) |
 
 > Das Frontend liest Vite-Variablen aus `frontend/.env`. Für lokale Entwicklung
 > existiert dort eine eigene `frontend/.env.example` — bei Bedarf kopieren.
@@ -217,6 +261,180 @@ Verbindungsabbruch per Backoff automatisch neu auf.
 
 ---
 
+## Voice-Pipeline (echter Betrieb)
+
+So wird aus dem UI ein echter Sprachassistent. Reihenfolge: **Hermes** starten →
+**STT/TTS-Modelle** bereitstellen → Friday starten.
+
+### 1. Hermes Agent (Agent + LLM)
+
+Hermes ist ein eigenständiges Open-Source-Projekt und läuft als separater
+Prozess mit OpenAI-kompatiblem API-Server.
+
+```bash
+# Installation (siehe hermes-agent.nousresearch.com)
+curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash
+hermes setup                      # interaktiv: OpenRouter wählen + API-Key
+
+# API-Server aktivieren (Port 8642) – z. B. via Umgebung:
+export API_SERVER_ENABLED=true
+export API_SERVER_KEY=change-me-local-dev
+hermes              # bzw. den Gateway/API-Server gemäß Hermes-Doku starten
+```
+
+In Friday passend setzen: `HERMES_BASE_URL=http://localhost:8642`,
+`HERMES_API_KEY=change-me-local-dev`. Schnelltest:
+
+```bash
+curl http://localhost:8642/v1/chat/completions \
+  -H "Authorization: Bearer change-me-local-dev" -H "Content-Type: application/json" \
+  -d '{"model":"hermes-agent","messages":[{"role":"user","content":"Hallo!"}]}'
+```
+
+### 2. Spracherkennung – whisper.cpp (STT)
+
+```bash
+# whisper.cpp bauen (auf dem Pi) und ein Modell laden
+git clone https://github.com/ggerganov/whisper.cpp && cd whisper.cpp && make
+bash ./models/download-ggml-model.sh base       # → ggml-base.bin
+```
+
+`STT_BINARY` auf das CLI (`whisper-cli`) und `STT_MODEL` auf das `.bin` zeigen
+lassen (im Docker-Setup unter `/models`).
+
+### 3. Sprachausgabe – piper (TTS)
+
+```bash
+pip install piper-tts        # liefert das `piper`-CLI (im Backend-Image enthalten)
+# Deutsche Stimme nach docker/models/ laden (onnx + json):
+BASE=https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium
+curl -L -o docker/models/de_DE-thorsten-medium.onnx      $BASE/de_DE-thorsten-medium.onnx
+curl -L -o docker/models/de_DE-thorsten-medium.onnx.json $BASE/de_DE-thorsten-medium.onnx.json
+```
+
+`TTS_VOICE` auf die `.onnx`-Stimme zeigen lassen (lokal `../docker/models/…`,
+im Docker `/models/…`). TTS abschaltbar via `TTS_ENABLED=false`. piper läuft mit
+aktiviertem venv (`source .venv/bin/activate`), damit das `piper`-CLI im PATH ist.
+
+### 4. Bedienung
+
+- **Tippen** (Touchscreen/Klick) irgendwo auf den Bildschirm startet/stoppt die
+  Aufnahme; alternativ **Leertaste**.
+- Der Visualizer reagiert **live** auf den echten Mikrofonpegel (Listening) bzw.
+  die TTS-Wiedergabe (Speaking).
+- **Wakeword** ist als Erweiterung vorgesehen (Hook in `TalkOverlay`); für die
+  Beta dient Push-to-talk als Trigger.
+
+### Chat-Verlauf
+
+Während eines Gesprächs blendet sich ein **Chat-Widget** ein: deine Fragen
+rechts, Fridays Antworten links. Die laufende Antwort erscheint wortweise mit
+einer Rede-Animation (synchron zur TTS-Wiedergabe). Der Verlauf wird im Frontend
+gehalten (letzte 20 Beiträge) und außerhalb von Idle angezeigt.
+
+### Hintergrundbilder (Idle-Slideshow)
+
+Lege einfach Bilder in den Bilderordner — sie werden im Idle-Modus mit
+Crossfade und langsamem Ken-Burns-Zoom durchgewechselt (Wechsel alle 12 s). Neue
+Dateien erscheinen automatisch (das Frontend pollt die Liste minütlich).
+
+- **Ordner:** lokal `assets/images/`, im Docker das gemountete Volume → `/images`
+  (`IMAGES_DIR` konfigurierbar).
+- **Formate:** jpg, jpeg, png, webp, gif, avif.
+- Endpoints: `GET /widgets/images` (Liste) · `GET /images/{datei}` (Auslieferung).
+- Ohne Bilder zeigt der Idle-Screen einen dezenten Verlauf als Fallback.
+
+### Mikrofonzugriff im Kiosk
+
+`getUserMedia` braucht einen „secure context". `http://localhost` gilt als
+sicher; bei Zugriff über eine LAN-IP Chromium ggf. mit
+`--unsafely-treat-insecure-origin-as-secure=http://<ip>:8080` starten (im
+Kiosk-Skript ergänzbar) oder HTTPS einrichten.
+
+---
+
+## Dev-Werkzeuge
+
+Auch ohne Hardware/Hermes lässt sich das UI über ein **Dev-Toolkit** vollständig
+durchspielen (Zustände, Pegel, Antworten, Widgets simulieren). Praktisch zum
+Iterieren am UI, unabhängig von der echten Pipeline. Alle Werkzeuge sind
+**strikt dev-only** und werden aus dem Produktions-Build ausgeschlossen
+(Frontend per `import.meta.env.DEV`-Guard, Backend nur bei
+`FRIDAY_ENV=development`).
+
+### Dev-Konsole (Frontend)
+
+Im Dev-Server (`npm run dev`) erscheint unten rechts ein **`` ` `` DEV**-Badge.
+
+- **Taste «`» (Backtick)** blendet ein Terminal-Overlay ein/aus, **«Esc»** schließt es.
+- Befehl eintippen + **Enter**; **↑/↓** blättert durch den Verlauf; **`help`** listet alles.
+
+Die Konsole erzeugt exakt die Protokoll-Nachrichten, die das Backend später
+selbst sendet — sie umgeht keine Logik.
+
+| Befehl | Wirkung |
+|---|---|
+| `help` / `status` / `clear` | Hilfe, Status, leeren |
+| `state <idle\|listening\|thinking\|speaking>` | Zustand **lokal** setzen (ohne Backend) |
+| `interrupt` | **Echten** `ui.interrupt` an das Backend senden |
+| `audio <0..1\|sim\|stop>` | Visualizer-Pegel setzen oder als Sinus simulieren |
+| `transcript <text…>` | Nutzertext setzen (Listening-Screen) |
+| `response <text…>` | Antwort anhängen (Speaking-Screen) |
+| `tool <name> <started\|succeeded\|failed>` | Tool-Event für die Tool-Panels |
+| `weather <°C> <bedingung…>` | **Wetter-Widget befüllen** |
+| `spotify <track> \| <artist>` | **Spotify-Widget befüllen** |
+| `dashboard` | Demo-Daten für Uhr, Wetter & Spotify auf einmal |
+| `error <text…>` | Fehlermeldung in den Store setzen |
+| `reset` | Transkript/Antwort/Audio leeren, zurück zu `idle` |
+| `ws <state\|dashboard\|tool\|audio> …` | Über **Backend-Debug-Endpoints** broadcasten (echter End-to-End-Pfad) |
+
+> **Lokal vs. `ws`:** Befehle ohne Präfix schreiben direkt in den Store
+> (funktioniert auch ohne laufendes Backend). `ws …` ruft die Backend-Debug-API
+> auf, die dann per WebSocket an **alle** Clients broadcastet.
+
+Zusätzlich ist der Store im Dev-Modus als `window.fridayStore` verfügbar:
+
+```js
+window.fridayStore.getState().state            // aktueller Zustand
+window.fridayStore.getState().applyServerMessage({ type: 'state.changed', payload: { state: 'thinking' } })
+```
+
+### Debug-Endpoints (Backend)
+
+Nur bei `FRIDAY_ENV=development` registriert. Praktisch zum Testen per `curl`
+oder als realer End-to-End-Durchstich (Broadcast an alle verbundenen Clients):
+
+```bash
+curl -X POST localhost:8000/debug/state/listening      # Zustand erzwingen
+curl -X POST localhost:8000/debug/dashboard            # Demo: Uhr/Wetter/Spotify
+curl -X POST localhost:8000/debug/audio/0.7            # Visualizer-Pegel
+curl -X POST localhost:8000/debug/tool/weather/succeeded
+```
+
+### Wetter- & Spotify-Widgets
+
+Die Widgets holen ihre Daten **request-basiert** (Polling über REST), nicht über
+Hermes:
+
+- **Wetter** (`GET /widgets/weather`): Open-Meteo, **kein API-Key**. Standort über
+  `WEATHER_LAT`/`WEATHER_LON` in `.env`. Frontend pollt alle 10 min. Läuft sofort.
+- **Spotify** (`GET /widgets/spotify`): optional, erfordert eine OAuth-App. Ohne
+  Credentials bleibt das Widget leer. Frontend pollt alle 10 s.
+
+**Spotify einrichten (einmalig):**
+
+1. App auf <https://developer.spotify.com/dashboard> anlegen → `Client ID` + `Secret`.
+2. Einmalig ein **Refresh-Token** mit Scope `user-read-currently-playing` erzeugen
+   (Authorization-Code-Flow, z. B. via `spotipy` oder einem der gängigen
+   Helper-Skripte).
+3. `SPOTIFY_CLIENT_ID`, `SPOTIFY_CLIENT_SECRET`, `SPOTIFY_REFRESH_TOKEN` in `.env`
+   setzen. Das Backend erneuert das Access-Token selbstständig.
+
+> Zum reinen UI-Testen ohne echte Quellen weiterhin die [Dev-Konsole](#dev-werkzeuge)
+> (`dashboard`, `weather …`, `spotify …`) oder `curl … /debug/dashboard` nutzen.
+
+---
+
 ## WebSocket-Protokoll
 
 Einziger Kommunikationskanal zwischen Backend und Frontend. Jede Nachricht ist
@@ -231,10 +449,13 @@ ein Envelope:
 `frontend/src/domain/messages.ts` — **beide Seiten müssen synchron bleiben**.
 
 **Server → Client:** `state.changed`, `audio.level`, `transcript`, `response`,
-`tool.event`, `dashboard.update`, `error`.
+`tool.event`, `audio.speak` (TTS abspielen), `dashboard.update`, `error`.
 
-**Client → Server:** `client.hello` (Handshake), `ui.interrupt` (Abbruch durch
-Nutzer).
+**Client → Server:** `client.hello` (Handshake), `listen.start` / `listen.cancel`
+(Aufnahme), `speak.done` (TTS fertig abgespielt), `ui.interrupt` (Abbruch).
+
+> Die eigentliche Audioübertragung läuft **nicht** über WebSocket, sondern per
+> HTTP: STT-Upload via `POST /voice/stt`, TTS-Abruf via `GET /voice/tts/{id}`.
 
 ---
 
@@ -338,15 +559,23 @@ Code-Splitting / `manualChunks` optimierbar.
 
 ## Roadmap
 
-Das aktuelle Grundgerüst enthält **keine Businesslogik**. Als Nächstes:
+**Beta – erledigt:**
 
-- [ ] Wakeword-Erkennung + Audio-Capture (USB-Mikrofon → STT)
-- [ ] Hermes-Agentenlogik, Memory & Tool Calling verdrahten
-- [ ] OpenRouter-Streaming an `AgentPort` anbinden
-- [ ] TTS-Ausgabe + Kopplung des Visualizers an reale Audio-Amplituden (FFT)
-- [ ] Dashboard-Datenquellen (Wetter, Spotify) als Hermes-Tools
-- [ ] Bildrotation im Idle-Modus mit echten Bildquellen
-- [ ] Telegram-Integration aktivieren
+- [x] Audio-Capture im Browser (getUserMedia) + echter Mikrofon-Visualizer
+- [x] Lokale Spracherkennung (whisper.cpp) über `POST /voice/stt`
+- [x] Hermes-Agent als OpenAI-kompatibler Backend-Server (`AgentPort`, SSE-Streaming, Tool-Events)
+- [x] Lokale Sprachausgabe (piper) + Visualizer aus TTS-Wiedergabe
+- [x] Vollständige Zustands-Orchestrierung (listening → thinking → speaking → idle)
+- [x] Widgets request-basiert (Open-Meteo live, Spotify-OAuth-Scaffold)
+- [x] Chat-Widget mit Verlauf + wortweiser Rede-Animation
+- [x] Hintergrundbild-Slideshow aus einem Ordner (Crossfade/Ken-Burns)
+
+**Als Nächstes:**
+
+- [ ] Wakeword-Erkennung (hands-free statt Push-to-talk)
+- [ ] Streaming-TTS satzweise (geringere Latenz bis zum ersten Ton)
+- [ ] Telegram-Kanal über Hermes aktivieren
+- [ ] HTTPS/sichere Origins für LAN-Mikrofonzugriff
 
 ---
 
