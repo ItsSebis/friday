@@ -19,6 +19,9 @@ export function useVoice() {
   const recorderRef = useRef<AudioRecorder | null>(null);
   const playerRef = useRef<AudioPlayer | null>(null);
   const recordingRef = useRef(false);
+  // Ref auf stopListening, damit der onSilence-Callback des Recorders die
+  // aktuelle Funktion erreicht (ohne Reihenfolge-/Closure-Probleme).
+  const stopListeningRef = useRef<(() => void) | null>(null);
 
   const send = useFridayStore((s) => s.sendToServer);
   const setAudioLevel = useFridayStore((s) => s.setAudioLevel);
@@ -28,7 +31,11 @@ export function useVoice() {
     if (recordingRef.current) return;
     recordingRef.current = true;
     send(clientMessage(MessageType.LISTEN_START));
-    const recorder = new AudioRecorder({ onLevel: setAudioLevel });
+    // Auto-Stopp nach Redepause (Endpointing) – ohne erneutes Tippen.
+    const recorder = new AudioRecorder({
+      onLevel: setAudioLevel,
+      onSilence: () => void stopListeningRef.current?.(),
+    });
     recorderRef.current = recorder;
     try {
       await recorder.start();
@@ -59,6 +66,9 @@ export function useVoice() {
       send(clientMessage(MessageType.LISTEN_CANCEL));
     }
   }, [send, setAudioLevel]);
+
+  // Aktuelle stopListening-Funktion für den Recorder-Callback bereithalten.
+  stopListeningRef.current = stopListening;
 
   const toggleListening = useCallback(() => {
     if (recordingRef.current) void stopListening();

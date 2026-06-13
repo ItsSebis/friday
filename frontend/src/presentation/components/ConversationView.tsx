@@ -83,7 +83,7 @@ export function ConversationView() {
         flexDirection: 'column',
         gap: 14,
         width: 'min(760px, 86vw)',
-        maxHeight: '52vh',
+        maxHeight: '64vh',
         overflowY: 'auto',
         padding: '4px 4px 8px',
         // Sanftes Ausblenden am oberen Rand.

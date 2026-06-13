@@ -10,15 +10,26 @@
  * Im Idle-Zustand zeigt es einen dezenten Hinweis. Wakeword-Erkennung kann
  * später hier andocken (statt manuellem Tippen).
  */
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useVoice } from '@application/hooks/useVoice';
 import { useFridayStore } from '@application/store/useFridayStore';
 import { FridayState } from '@domain/states';
 import { theme } from '@presentation/theme/theme';
 
+// Wakeword nur laden, wenn ein AccessKey gesetzt ist → Porcupine-WASM (groß)
+// wird sonst gar nicht ins Bundle gezogen.
+const WAKEWORD_ENABLED = Boolean(import.meta.env.VITE_PICOVOICE_ACCESS_KEY);
+const WakewordController = WAKEWORD_ENABLED
+  ? lazy(() =>
+      import('@presentation/components/WakewordController').then((m) => ({
+        default: m.WakewordController,
+      })),
+    )
+  : null;
+
 export function TalkOverlay() {
-  const { toggleListening } = useVoice();
+  const { startListening, toggleListening } = useVoice();
   const state = useFridayStore((s) => s.state);
 
   // Leertaste als Trigger (ignoriert, wenn ein Eingabefeld fokussiert ist).
@@ -36,6 +47,13 @@ export function TalkOverlay() {
 
   return (
     <>
+      {/* Wakeword-Erkennung (nur mit AccessKey, lazy geladen). */}
+      {WakewordController && (
+        <Suspense fallback={null}>
+          <WakewordController onWake={startListening} />
+        </Suspense>
+      )}
+
       {/* Transparente Tap-Fläche unter den Inhalten, aber klickbar. */}
       <div
         onPointerDown={toggleListening}
@@ -60,7 +78,7 @@ export function TalkOverlay() {
             pointerEvents: 'none',
           }}
         >
-          Tippen zum Sprechen
+          „Jarvis" sagen oder tippen
         </motion.div>
       )}
     </>

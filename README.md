@@ -114,12 +114,17 @@ Detaillierte Layer-Dokumentation:
 Das System ist eine endliche Zustandsmaschine. Das **Backend ist die Source of
 Truth**; das Frontend rendert nur den empfangenen Zustand.
 
-| Zustand     | Auslöser                | Frontend-Darstellung                       |
+Die Oberfläche bleibt durchgehend dieselbe (Bilderrahmen + Dashboard). Der
+Zustand wird **nur als kompakter Indikator in der Ecke** angezeigt (`StatusOrb`),
+nicht mehr als kompletter Screen-Wechsel. Während eines Gesprächs blendet sich
+das Chat-Widget ein.
+
+| Zustand     | Auslöser                | Indikator (Ecke)                           |
 |-------------|-------------------------|--------------------------------------------|
-| `idle`      | Standard                | Bildrotation, Uhr, Wetter, Spotify         |
-| `listening` | Wakeword erkannt        | Kreisförmiger Visualizer, Statusanzeige    |
-| `thinking`  | Anfrage in Bearbeitung  | Verarbeitungs-Animation                    |
-| `speaking`  | Antwort wird ausgegeben | Visualizer, Antworttext                    |
+| `idle`      | Standard                | dezenter Punkt „Bereit"; Uhr/Bilder sichtbar |
+| `listening` | Push-to-talk / Wakeword | Ring „Höre zu", pulsiert mit Mikrofonpegel |
+| `thinking`  | Anfrage in Bearbeitung  | rotierender Bogen „Denkt nach"             |
+| `speaking`  | Antwort wird gesprochen | Ring „Spricht", pulsiert mit TTS-Pegel     |
 
 ```
         Wakeword            Transkript fertig         Antwort fertig
@@ -167,13 +172,15 @@ friday/
 | Abhängigkeit | Wofür | Hinweis |
 |---|---|---|
 | **Hermes Agent** | Agentenlogik + LLM | Läuft als eigener Prozess; API-Server auf `:8642`. Mit OpenRouter konfigurieren. |
-| **whisper.cpp** + ggml-Modell | Spracherkennung (STT) | Binary im PATH (`STT_BINARY`), Modell unter `STT_MODEL`. |
-| **piper** + Stimme (.onnx) | Sprachausgabe (TTS) | Binary (`TTS_BINARY`) + Stimme (`TTS_VOICE`); im Docker-Image per pip. |
+| **STT** – Groq *(empfohlen)* oder lokal | Spracherkennung | Cloud: kostenloser Groq-Key (akkurat). Alternativ lokal whisper.cpp (`STT_PROVIDER=local`). |
+| **TTS** – ElevenLabs *(empfohlen)* oder lokal | Sprachausgabe | Cloud: natürliche feminine Stimme (Key nötig). Alternativ lokal piper (`TTS_PROVIDER=piper`). |
+| **Picovoice** AccessKey | Wakeword „Jarvis" (optional) | Kostenlos auf console.picovoice.ai. Leer = Push-to-talk. |
 | Spotify-OAuth-App | Spotify-Widget (optional) | Nur falls das Now-Playing-Widget genutzt wird. |
 
 > Fehlt eine dieser Abhängigkeiten, bleibt Friday lauffähig (Graceful
 > Degradation): ohne Hermes kommt eine Hinweis-Antwort, ohne STT ein leeres
-> Transkript, ohne TTS wird die Antwort nur angezeigt.
+> Transkript, ohne TTS wird die Antwort nur angezeigt, ohne Wakeword greift
+> Push-to-talk.
 
 ---
 
@@ -291,39 +298,60 @@ curl http://localhost:8642/v1/chat/completions \
   -d '{"model":"hermes-agent","messages":[{"role":"user","content":"Hallo!"}]}'
 ```
 
-### 2. Spracherkennung – whisper.cpp (STT)
+### 2. Spracherkennung (STT)
+
+**Empfohlen – Groq (Cloud, kostenlos & akkurat):** Key auf
+<https://console.groq.com> erstellen, dann in `.env`:
 
 ```bash
-# whisper.cpp bauen (auf dem Pi) und ein Modell laden
-git clone https://github.com/ggerganov/whisper.cpp && cd whisper.cpp && make
-bash ./models/download-ggml-model.sh base       # → ggml-base.bin
+STT_PROVIDER=cloud
+STT_API_KEY=gsk_…
+STT_API_BASE=https://api.groq.com/openai/v1   # OpenAI: https://api.openai.com/v1
+STT_CLOUD_MODEL=whisper-large-v3-turbo
 ```
 
-`STT_BINARY` auf das CLI (`whisper-cli`) und `STT_MODEL` auf das `.bin` zeigen
-lassen (im Docker-Setup unter `/models`).
+Der gleiche Adapter funktioniert mit jeder OpenAI-kompatiblen
+`/audio/transcriptions`-API (z. B. OpenAI).
 
-### 3. Sprachausgabe – piper (TTS)
+**Alternative – lokal (privat, ungenauer):** `STT_PROVIDER=local`, dazu
+whisper.cpp bauen und ein ggml-Modell unter `STT_MODEL` ablegen.
+
+### 3. Sprachausgabe (TTS)
+
+**Empfohlen – ElevenLabs (natürliche, feminine Stimme):** Key + Voice-ID setzen:
 
 ```bash
-pip install piper-tts        # liefert das `piper`-CLI (im Backend-Image enthalten)
-# Deutsche Stimme nach docker/models/ laden (onnx + json):
-BASE=https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE/thorsten/medium
-curl -L -o docker/models/de_DE-thorsten-medium.onnx      $BASE/de_DE-thorsten-medium.onnx
-curl -L -o docker/models/de_DE-thorsten-medium.onnx.json $BASE/de_DE-thorsten-medium.onnx.json
+TTS_PROVIDER=elevenlabs
+ELEVENLABS_API_KEY=…
+ELEVENLABS_VOICE_ID=21m00Tcm4TlvDq8ikWAM     # z. B. „Rachel" (feminin); eigene wählbar
+ELEVENLABS_MODEL=eleven_multilingual_v2      # oder eleven_v3 / eleven_turbo_v2_5
 ```
 
-`TTS_VOICE` auf die `.onnx`-Stimme zeigen lassen (lokal `../docker/models/…`,
-im Docker `/models/…`). TTS abschaltbar via `TTS_ENABLED=false`. piper läuft mit
-aktiviertem venv (`source .venv/bin/activate`), damit das `piper`-CLI im PATH ist.
+**Alternative – lokal (piper):** `TTS_PROVIDER=piper`, `pip install piper-tts`,
+deutsche Stimme nach `docker/models/` laden (z. B. `de_DE-kerstin-low`, feminin)
+und `TTS_VOICE` setzen. Mit aktiviertem venv starten, damit `piper` im PATH ist.
+TTS ganz aus: `TTS_ENABLED=false`.
 
-### 4. Bedienung
+### 4. Wakeword „Jarvis" (optional)
 
-- **Tippen** (Touchscreen/Klick) irgendwo auf den Bildschirm startet/stoppt die
-  Aufnahme; alternativ **Leertaste**.
-- Der Visualizer reagiert **live** auf den echten Mikrofonpegel (Listening) bzw.
-  die TTS-Wiedergabe (Speaking).
-- **Wakeword** ist als Erweiterung vorgesehen (Hook in `TalkOverlay`); für die
-  Beta dient Push-to-talk als Trigger.
+Hands-free per Picovoice Porcupine, komplett offline im Browser:
+
+1. Kostenlosen AccessKey auf <https://console.picovoice.ai> erstellen.
+2. In `frontend/.env`: `VITE_PICOVOICE_ACCESS_KEY=…`
+3. (Die Modelldatei `frontend/public/porcupine_params.pv` liegt bereits bei.)
+
+Ohne Key bleibt das Wakeword aus und Push-to-talk greift. Das Porcupine-WASM
+(~7 MB) wird per Code-Splitting **nur** geladen, wenn ein Key gesetzt ist.
+
+### 5. Bedienung & Befehlsende
+
+- **Auslösen:** „Jarvis" sagen (Wakeword) **oder** tippen/Leertaste (Push-to-talk).
+- **Ende des Befehls:** automatisch per **Stille-Endpointing** — nach ~1,2 s
+  Redepause stoppt die Aufnahme und schickt sie an die STT. Sicherheitsnetze:
+  Abbruch nach 6 s ohne Sprache, hartes Maximum bei 15 s. Tippen stoppt vorzeitig.
+  (Parameter im `AudioRecorder`: `silenceMs`, `initialTimeoutMs`, `maxDurationMs`.)
+- Der Zustand erscheint als Indikator in der Ecke; der Ring pulsiert live mit dem
+  Mikrofon- bzw. TTS-Pegel.
 
 ### Chat-Verlauf
 
@@ -569,10 +597,12 @@ Code-Splitting / `manualChunks` optimierbar.
 - [x] Widgets request-basiert (Open-Meteo live, Spotify-OAuth-Scaffold)
 - [x] Chat-Widget mit Verlauf + wortweiser Rede-Animation
 - [x] Hintergrundbild-Slideshow aus einem Ordner (Crossfade/Ken-Burns)
+- [x] Cloud-STT (Groq) & ElevenLabs-TTS als umschaltbare Provider
+- [x] Wakeword „Jarvis" (Porcupine) + Stille-Endpointing
+- [x] Zustand als kompakter Ecken-Indikator statt Vollbild-Screens
 
 **Als Nächstes:**
 
-- [ ] Wakeword-Erkennung (hands-free statt Push-to-talk)
 - [ ] Streaming-TTS satzweise (geringere Latenz bis zum ersten Ton)
 - [ ] Telegram-Kanal über Hermes aktivieren
 - [ ] HTTPS/sichere Origins für LAN-Mikrofonzugriff

@@ -11,6 +11,9 @@
     "typecheck": "tsc -b --noEmit"
   },
   "dependencies": {
+    "@picovoice/porcupine-react": "^4.0.0",
+    "@picovoice/porcupine-web": "^4.0.0",
+    "@picovoice/web-voice-processor": "^4.0.10",
     "@react-three/fiber": "^8.17.10",
     "framer-motion": "^11.15.0",
     "react": "^18.3.1",

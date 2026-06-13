@@ -1,18 +1,30 @@
 /**
- * Infrastructure: Mikrofon-Recorder (Web Audio API).
+ * Infrastructure: Mikrofon-Recorder (Web Audio API) mit Stille-Endpointing.
  *
  * Nimmt über `getUserMedia` auf, erfasst rohe PCM-Samples und kodiert beim Stopp
- * ein **16-kHz-Mono-WAV** — genau das Format, das whisper.cpp erwartet (kein
- * serverseitiges Transcoding nötig). Liefert zusätzlich live den Mikrofonpegel
- * (RMS, 0..1) für den Audio-Visualizer.
+ * ein **16-kHz-Mono-WAV** (whisper-/Cloud-kompatibel). Liefert live den
+ * Mikrofonpegel (RMS, 0..1) für den Visualizer.
+ *
+ * **Endpointing:** Erkennt anhand des Pegels Sprache und stoppt automatisch nach
+ * einer Redepause (`onSilence`). Zusätzlich: Abbruch, wenn nie gesprochen wird
+ * (`initialTimeout`), und ein hartes Maximum (`maxDuration`).
  *
  * Reine Transportschicht: kein React, kein Store.
  */
 export interface AudioRecorderOptions {
-  /** Callback für den geglätteten Mikrofonpegel (0..1), ~60×/s. */
+  /** Mikrofonpegel (0..1), ~je Audio-Block. */
   onLevel?: (level: number) => void;
-  /** Ziel-Abtastrate (whisper.cpp erwartet 16 kHz). */
+  /** Wird einmalig gefeuert, wenn die Aufnahme automatisch enden soll. */
+  onSilence?: () => void;
   sampleRate?: number;
+  /** Pegelschwelle, ab der „Sprache" gilt. */
+  threshold?: number;
+  /** Stille-Dauer nach Sprache bis zum Auto-Stopp (ms). */
+  silenceMs?: number;
+  /** Abbruch, falls bis dahin gar nicht gesprochen wurde (ms). */
+  initialTimeoutMs?: number;
+  /** Hartes Maximum der Aufnahmedauer (ms). */
+  maxDurationMs?: number;
 }
 
 export class AudioRecorder {
@@ -21,44 +33,78 @@ export class AudioRecorder {
   private processor: ScriptProcessorNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
   private chunks: Float32Array[] = [];
-  private rafLevel = 0;
+
   private readonly sampleRate: number;
+  private readonly threshold: number;
+  private readonly silenceMs: number;
+  private readonly initialTimeoutMs: number;
+  private readonly maxDurationMs: number;
+
+  private startedAt = 0;
+  private lastVoiceAt = 0;
+  private hasSpoken = false;
+  private ended = false;
 
   constructor(private readonly options: AudioRecorderOptions = {}) {
     this.sampleRate = options.sampleRate ?? 16_000;
+    this.threshold = options.threshold ?? 0.02;
+    this.silenceMs = options.silenceMs ?? 1200;
+    this.initialTimeoutMs = options.initialTimeoutMs ?? 6000;
+    this.maxDurationMs = options.maxDurationMs ?? 15_000;
   }
 
   /** Fordert Mikrofonzugriff an und beginnt aufzuzeichnen. */
   async start(): Promise<void> {
     this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    // Chromium unterstützt das Erzwingen der Abtastrate am AudioContext.
     this.ctx = new AudioContext({ sampleRate: this.sampleRate });
     this.source = this.ctx.createMediaStreamSource(this.stream);
-
-    // ScriptProcessor ist breit unterstützt; AudioWorklet wäre die moderne
-    // Alternative, für das Grundgerüst genügt dies.
     this.processor = this.ctx.createScriptProcessor(4096, 1, 1);
     this.chunks = [];
+    this.startedAt = performance.now();
+    this.lastVoiceAt = this.startedAt;
+    this.hasSpoken = false;
+    this.ended = false;
 
     this.processor.onaudioprocess = (e) => {
       const input = e.inputBuffer.getChannelData(0);
       this.chunks.push(new Float32Array(input));
-      // Pegel (RMS) für den Visualizer.
-      if (this.options.onLevel) {
-        let sum = 0;
-        for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
-        const rms = Math.sqrt(sum / input.length);
-        this.options.onLevel(Math.min(1, rms * 4)); // empirische Skalierung
-      }
+
+      // Pegel (RMS) für Visualizer + Endpointing.
+      let sum = 0;
+      for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+      const rms = Math.sqrt(sum / input.length);
+      this.options.onLevel?.(Math.min(1, rms * 4));
+
+      this.evaluateEndpoint(rms);
     };
 
     this.source.connect(this.processor);
     this.processor.connect(this.ctx.destination);
   }
 
-  /** Stoppt die Aufnahme und gibt die Aufnahme als WAV-Blob zurück. */
+  /** Entscheidet anhand des Pegels, ob die Aufnahme enden soll. */
+  private evaluateEndpoint(rms: number): void {
+    if (this.ended) return;
+    const now = performance.now();
+
+    if (rms > this.threshold) {
+      this.hasSpoken = true;
+      this.lastVoiceAt = now;
+    }
+
+    const silenceAfterSpeech = this.hasSpoken && now - this.lastVoiceAt > this.silenceMs;
+    const noSpeechTimeout = !this.hasSpoken && now - this.startedAt > this.initialTimeoutMs;
+    const tooLong = now - this.startedAt > this.maxDurationMs;
+
+    if (silenceAfterSpeech || noSpeechTimeout || tooLong) {
+      this.ended = true;
+      this.options.onSilence?.();
+    }
+  }
+
+  /** Stoppt die Aufnahme und gibt sie als WAV-Blob zurück. */
   async stop(): Promise<Blob> {
-    cancelAnimationFrame(this.rafLevel);
+    this.ended = true;
     this.processor?.disconnect();
     this.source?.disconnect();
     this.stream?.getTracks().forEach((t) => t.stop());
@@ -66,8 +112,7 @@ export class AudioRecorder {
     await this.ctx?.close();
     this.ctx = null;
 
-    const samples = this.mergeChunks();
-    return this.encodeWav(samples, rate);
+    return this.encodeWav(this.mergeChunks(), rate);
   }
 
   private mergeChunks(): Float32Array {
@@ -94,13 +139,13 @@ export class AudioRecorder {
     view.setUint32(4, 36 + samples.length * 2, true);
     writeStr(8, 'WAVE');
     writeStr(12, 'fmt ');
-    view.setUint32(16, 16, true); // PCM-Header-Größe
-    view.setUint16(20, 1, true); // Audioformat PCM
-    view.setUint16(22, 1, true); // Kanäle: mono
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
     view.setUint32(24, sampleRate, true);
-    view.setUint32(28, sampleRate * 2, true); // Byterate
-    view.setUint16(32, 2, true); // Blockausrichtung
-    view.setUint16(34, 16, true); // Bits pro Sample
+    view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
     writeStr(36, 'data');
     view.setUint32(40, samples.length * 2, true);
 

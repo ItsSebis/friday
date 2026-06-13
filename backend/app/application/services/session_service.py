@@ -143,7 +143,7 @@ class SessionService:
         wav = await self._speaker.synthesize(text)
         audio_url = None
         if wav:
-            audio_id = self._audio_store.put(wav)
+            audio_id = self._audio_store.put(wav, self._speaker.content_type)
             audio_url = f"/voice/tts/{audio_id}"
 
         await self._broadcaster.broadcast(

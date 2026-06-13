@@ -46,9 +46,10 @@ def build_voice_router(
 
     @router.get("/tts/{audio_id}")
     async def tts(audio_id: str) -> Response:
-        wav = audio_store.get(audio_id)
-        if wav is None:
+        clip = audio_store.get(audio_id)
+        if clip is None:
             raise HTTPException(404, "Audio nicht gefunden oder abgelaufen")
-        return Response(content=wav, media_type="audio/wav")
+        data, content_type = clip
+        return Response(content=data, media_type=content_type)
 
     return router

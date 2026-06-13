@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 class PiperSpeaker(SpeakerPort):
     """TTS-Adapter auf Basis von piper."""
 
+    content_type = "audio/wav"
+
     def __init__(self, settings: Settings) -> None:
         self._enabled = settings.tts_enabled
         self._binary = settings.tts_binary

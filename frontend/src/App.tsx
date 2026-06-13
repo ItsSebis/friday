@@ -1,12 +1,13 @@
 /**
- * App: Wurzelkomponente / Screen-Router.
+ * App: Wurzelkomponente.
  *
- * - Stellt über `useWebSocket` die Verbindung zum Backend her.
- * - Wählt anhand des `state` aus dem Store genau einen Screen.
- * - Übergänge zwischen Screens animiert `AnimatePresence` (sanftes Cross-Fade).
+ * Eine **persistente** Oberfläche (FrameView: Bilderrahmen + Dashboard). Der
+ * Zustand wechselt nicht mehr die ganze Seite, sondern wird nur als kompakter
+ * Indikator in der Ecke angezeigt (StatusOrb). Während eines Gesprächs blendet
+ * sich das Chat-Widget ein.
  *
- * Die Komponente enthält bewusst keine Businesslogik – sie verdrahtet nur
- * Transport, State und Präsentation.
+ * Verdrahtet außerdem Transport (WebSocket), Widget-Polling und die
+ * Voice-Bridge — enthält selbst keine Businesslogik.
  */
 import { lazy, Suspense } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -14,47 +15,33 @@ import { useWebSocket } from '@application/hooks/useWebSocket';
 import { useWidgets } from '@application/hooks/useWidgets';
 import { useFridayStore } from '@application/store/useFridayStore';
 import { FridayState } from '@domain/states';
-import { IdleScreen } from '@presentation/screens/IdleScreen';
-import { ListeningScreen } from '@presentation/screens/ListeningScreen';
-import { ThinkingScreen } from '@presentation/screens/ThinkingScreen';
-import { SpeakingScreen } from '@presentation/screens/SpeakingScreen';
-import { TalkOverlay } from '@presentation/components/TalkOverlay';
+import { FrameView } from '@presentation/components/FrameView';
+import { StatusOrb } from '@presentation/components/StatusOrb';
 import { ConversationView } from '@presentation/components/ConversationView';
+import { ToolPanel } from '@presentation/components/ToolPanel';
+import { TalkOverlay } from '@presentation/components/TalkOverlay';
 
-// Dev-Konsole nur im Dev-Modus laden. Der dynamische Import liegt hinter einer
-// statisch auswertbaren Bedingung → im Produktions-Build wird der Code
-// vollständig entfernt (tree-shaking).
+// Dev-Konsole nur im Dev-Modus laden (im Prod-Build vollständig entfernt).
 const DevConsole = import.meta.env.DEV
   ? lazy(() => import('@presentation/dev/DevConsole').then((m) => ({ default: m.DevConsole })))
   : null;
 
-/** Mapt jeden Zustand auf seinen Screen (erschöpfend). */
-const SCREENS: Record<FridayState, () => JSX.Element> = {
-  [FridayState.IDLE]: IdleScreen,
-  [FridayState.LISTENING]: ListeningScreen,
-  [FridayState.THINKING]: ThinkingScreen,
-  [FridayState.SPEAKING]: SpeakingScreen,
-};
-
 export function App() {
-  // Verbindung aufbauen + Idle-Widgets pollen (Seiteneffekte).
+  // Seiteneffekte: Verbindung, Widget-Polling.
   useWebSocket();
   useWidgets();
 
   const state = useFridayStore((s) => s.state);
-  const Screen = SCREENS[state];
+  const conversing = state !== FridayState.IDLE;
 
   return (
     <>
-      <AnimatePresence mode="wait">
-        {/* `key` pro Zustand → AnimatePresence spielt Exit/Enter beim Wechsel. */}
-        <Screen key={state} />
-      </AnimatePresence>
+      {/* Persistente Grundoberfläche. */}
+      <FrameView />
 
-      {/* Chat-Verlauf: einmal global gemountet (persistiert über Zustandswechsel),
-          nur außerhalb von Idle sichtbar. */}
+      {/* Chat-Verlauf: nur während eines Gesprächs, zentral eingeblendet. */}
       <AnimatePresence>
-        {state !== FridayState.IDLE && (
+        {conversing && (
           <motion.div
             key="conversation"
             initial={{ opacity: 0 }}
@@ -62,13 +49,14 @@ export function App() {
             exit={{ opacity: 0 }}
             style={{
               position: 'fixed',
-              top: '5vh',
+              top: '12vh',
+              bottom: '12vh',
               left: 0,
               right: 0,
-              height: '48vh',
               display: 'flex',
-              alignItems: 'flex-end',
-              justifyContent: 'center',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
               zIndex: 3,
               pointerEvents: 'none',
             }}
@@ -77,6 +65,16 @@ export function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Tool-Aktivität (z. B. während Thinking) dezent über dem Status. */}
+      {conversing && (
+        <div style={{ position: 'fixed', top: 64, right: 26, zIndex: 4, pointerEvents: 'none' }}>
+          <ToolPanel />
+        </div>
+      )}
+
+      {/* Zustands-Indikator in der Ecke. */}
+      <StatusOrb />
 
       {/* Push-to-talk-Steuerung + Voice-Bridge (Aufnahme/STT/TTS). */}
       <TalkOverlay />

@@ -12,6 +12,9 @@ from abc import ABC, abstractmethod
 class SpeakerPort(ABC):
     """Vertrag zum Synthetisieren von Sprache."""
 
+    #: MIME-Typ der von ``synthesize`` gelieferten Audio-Bytes.
+    content_type: str = "audio/wav"
+
     @abstractmethod
     async def synthesize(self, text: str) -> bytes | None:
         """Synthetisiert Text zu WAV-Audio.

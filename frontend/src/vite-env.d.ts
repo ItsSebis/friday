@@ -6,6 +6,7 @@
  */
 interface ImportMetaEnv {
   readonly VITE_WS_URL?: string;
+  readonly VITE_PICOVOICE_ACCESS_KEY?: string;
 }
 
 interface ImportMeta {

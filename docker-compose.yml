@@ -22,7 +22,7 @@ services:
       # Im Container liegen die Modelle/Bilder unter den gemounteten Pfaden
       # (überschreibt die lokalen ../docker/...-Pfade aus der .env).
       STT_MODEL: /models/ggml-base.bin
-      TTS_VOICE: /models/de_DE-thorsten-medium.onnx
+      TTS_VOICE: /models/de_DE-kerstin-low.onnx
       IMAGES_DIR: /images
     extra_hosts:
       - "host.docker.internal:host-gateway"
