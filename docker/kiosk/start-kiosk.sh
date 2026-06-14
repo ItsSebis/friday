@@ -26,6 +26,7 @@ CHROME_BIN="$(command -v chromium-browser || command -v chromium || echo chromiu
 exec "$CHROME_BIN" \
   --kiosk \
   --noerrdialogs \
+  --password-store=basic \
   --disable-infobars \
   --disable-translate \
   --disable-features=TranslateUI \

@@ -12,6 +12,7 @@ function formatNow(): string {
   return new Date().toLocaleTimeString('de-DE', {
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
   });
 }
 
