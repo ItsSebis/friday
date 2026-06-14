@@ -14,7 +14,6 @@ import {
   type Envelope,
   type ServerMessage,
   type ToolEventPayload,
-  type CalendarInfo,
 } from '@domain/messages';
 
 interface DashboardState {
