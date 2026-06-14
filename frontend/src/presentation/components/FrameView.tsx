@@ -15,6 +15,7 @@ import { BackgroundSlideshow } from '@presentation/components/BackgroundSlidesho
 import { useFridayStore } from '@application/store/useFridayStore';
 import { FridayState } from '@domain/states';
 import { theme } from '@presentation/theme/theme';
+import { CalendarWidget } from '@presentation/components/CalendarWidget';
 
 export function FrameView() {
   const isIdle = useFridayStore((s) => s.state === FridayState.IDLE);
@@ -43,12 +44,26 @@ export function FrameView() {
       <div
         style={{
           position: 'absolute',
+          top: 40,
+          left: 40,
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-end',
+          gap: 24,
+        }}
+      >
+        <CalendarWidget />
+      </div>
+      <div
+        style={{
+          position: 'absolute',
           bottom: 40,
           left: 40,
           right: 40,
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'flex-end',
+          gap: 24,
         }}
       >
         <WeatherWidget />

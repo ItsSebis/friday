@@ -14,12 +14,14 @@ import {
   type Envelope,
   type ServerMessage,
   type ToolEventPayload,
+  type CalendarInfo,
 } from '@domain/messages';
 
 interface DashboardState {
   clock: string | null;
   weather: DashboardUpdatePayload['weather'] | null;
   spotify: DashboardUpdatePayload['spotify'] | null;
+  calendar: DashboardUpdatePayload['calendar'] | null;
 }
 
 /** Ein Eintrag im Gesprächsverlauf (für das Chat-Widget). */
@@ -81,6 +83,7 @@ const initialDashboard: DashboardState = {
   clock: null,
   weather: null,
   spotify: null,
+  calendar: null,
 };
 
 // Modul-lokaler Halter der aktiven Sendefunktion. Bewusst außerhalb des
@@ -171,6 +174,7 @@ export const useFridayStore = create<FridayStore>((set) => ({
               clock: message.payload.clock ?? prev.dashboard.clock,
               weather: message.payload.weather ?? prev.dashboard.weather,
               spotify: message.payload.spotify ?? prev.dashboard.spotify,
+              calendar: message.payload.calendar ?? prev.dashboard.calendar,
             },
           };
         case MessageType.ERROR:

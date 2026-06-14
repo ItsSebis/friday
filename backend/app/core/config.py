@@ -8,6 +8,7 @@ instanziiert und per Dependency Injection weitergereicht.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -19,7 +20,8 @@ class Settings(BaseSettings):
         # .env wird sowohl im Repo-Root (lokal: `cd backend && uvicorn …`) als auch
         # im Backend-Verzeichnis gesucht; spätere Datei hat Vorrang. Echte
         # Umgebungsvariablen (z. B. via docker-compose) überschreiben beide.
-        env_file=("../.env", ".env"),
+        # Zusätzliche .icloud_env im Home-Verzeichnis wird ebenfalls geladen.
+        env_file=(str(Path.home() / ".icloud_env"), "../.env", ".env"),
         env_prefix="",
         extra="ignore",
         case_sensitive=False,
@@ -84,6 +86,9 @@ class Settings(BaseSettings):
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
     spotify_refresh_token: str = ""
+    # iCloud Kalender
+    icloud_apple_id: str = ""
+    icloud_app_password: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:

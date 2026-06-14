@@ -73,10 +73,22 @@ export interface SpotifyInfo {
   albumArt?: string;
 }
 
+export interface CalendarEvent {
+  calendar: string;
+  start: string;
+  is_all_day: boolean;
+  summary: string;
+}
+
+export interface CalendarInfo {
+  events: CalendarEvent[];
+}
+
 export interface DashboardUpdatePayload {
   clock?: string;
   weather?: WeatherInfo;
   spotify?: SpotifyInfo;
+  calendar?: CalendarInfo;
 }
 
 export interface ErrorPayload {

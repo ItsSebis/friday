@@ -12,6 +12,7 @@ import { MessageType, type ServerMessage } from '@domain/messages';
 
 const WEATHER_INTERVAL_MS = 10 * 60 * 1000; // 10 min
 const SPOTIFY_INTERVAL_MS = 10 * 1000; //       10 s
+const CALENDAR_INTERVAL_MS = 5 * 60 * 1000; //   5 min
 const IMAGES_INTERVAL_MS = 60 * 1000; //        60 s (neue Bilder erkennen)
 
 export function useWidgets() {
@@ -54,6 +55,18 @@ export function useWidgets() {
       }
     };
 
+    const fetchCalendar = async () => {
+      try {
+        const res = await fetch(apiUrl('/widgets/calendar'));
+        const c = await res.json();
+        if (c?.events) {
+          dispatch({ calendar: { events: c.events } });
+        }
+      } catch (err) {
+        if (import.meta.env.DEV) console.warn('[widgets] calendar:', err);
+      }
+    };
+
     const fetchImages = async () => {
       try {
         const res = await fetch(apiUrl('/widgets/images'));
@@ -68,14 +81,17 @@ export function useWidgets() {
 
     void fetchWeather();
     void fetchSpotify();
+    void fetchCalendar();
     void fetchImages();
     const weatherId = setInterval(fetchWeather, WEATHER_INTERVAL_MS);
     const spotifyId = setInterval(fetchSpotify, SPOTIFY_INTERVAL_MS);
+    const calendarId = setInterval(fetchCalendar, CALENDAR_INTERVAL_MS);
     const imagesId = setInterval(fetchImages, IMAGES_INTERVAL_MS);
     return () => {
       active = false;
       clearInterval(weatherId);
       clearInterval(spotifyId);
+      clearInterval(calendarId);
       clearInterval(imagesId);
     };
   }, [apply, setImages]);

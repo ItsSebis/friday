@@ -11,6 +11,7 @@ from pathlib import Path
 
 from fastapi import APIRouter
 
+from app.infrastructure.widgets.calendar_service import CalendarService
 from app.infrastructure.widgets.spotify_service import SpotifyService
 from app.infrastructure.widgets.weather_service import WeatherService
 
@@ -18,7 +19,7 @@ _IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}
 
 
 def build_widgets_router(
-    weather: WeatherService, spotify: SpotifyService, images_dir: str
+    weather: WeatherService, spotify: SpotifyService, calendar: CalendarService, images_dir: str
 ) -> APIRouter:
     """Erzeugt den Widget-Router mit injizierten Diensten."""
     router = APIRouter(prefix="/widgets", tags=["widgets"])
@@ -32,6 +33,12 @@ def build_widgets_router(
     async def get_spotify() -> dict:
         """Aktuell laufender Spotify-Track (oder ``configured: false``)."""
         return await spotify.current()
+
+    @router.get("/calendar")
+    async def get_calendar() -> dict:
+        """Nächste 5 Kalenderereignisse (iCloud)."""
+        events = await calendar.next_events(num=5)
+        return {"events": events}
 
     @router.get("/images")
     async def list_images() -> dict:

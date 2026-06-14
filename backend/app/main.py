@@ -29,6 +29,7 @@ from app.infrastructure.audio.elevenlabs_speaker import ElevenLabsSpeaker
 from app.infrastructure.audio.piper_speaker import PiperSpeaker
 from app.infrastructure.audio.whisper_transcriber import WhisperTranscriber
 from app.infrastructure.hermes.hermes_agent import HermesAgent
+from app.infrastructure.widgets.calendar_service import CalendarService
 from app.infrastructure.widgets.spotify_service import SpotifyService
 from app.infrastructure.widgets.weather_service import WeatherService
 
@@ -77,12 +78,13 @@ def create_app() -> FastAPI:
 
     weather = WeatherService(settings)
     spotify = SpotifyService(settings)
+    calendar = CalendarService(settings)
 
     # ── Routen registrieren ───────────────────────────────────────────
     app.include_router(routes.router)
     app.include_router(build_ws_router(manager, session))
     app.include_router(build_voice_router(session, transcriber, audio_store))
-    app.include_router(build_widgets_router(weather, spotify, settings.images_dir))
+    app.include_router(build_widgets_router(weather, spotify, calendar, settings.images_dir))
 
     # Hintergrundbilder statisch ausliefern (falls der Ordner existiert).
     images_path = Path(settings.images_dir)
